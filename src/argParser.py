@@ -38,7 +38,7 @@ def argParser(argv):
     
     parser.add_argument('-ow', '--overwrite', dest='overwrite',
                         action='store_true', default=True,
-                        help='Overwrite model after training')
+                        help='Overwrite existing model after training')
 
     parser.add_argument('-o', '--output', dest='output',
                         action='store_true', default=os.path.join('..', 'output'),
