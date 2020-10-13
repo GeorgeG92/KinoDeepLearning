@@ -1,10 +1,12 @@
 import numpy as np
-import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 import random
 from tensorflow.python.util import deprecation
 deprecation._PRINT_DEPRECATION_WARNINGS = False
+import tensorflow as tf
+from queue import Queue
+from threading import Thread
 
 class model():
 	def __init__(self, args, dataDf):
@@ -16,6 +18,7 @@ class model():
 		self.overwrite = args.overwrite
 		self.output = args.output
 		self.winNos = 20
+		self.queue = Queue(maxsize=5)
 		self.contFDict = {}               # dictionary of continuous features
 		self.seqFDict = {}                # dictionary of seq features (past winning numbers)
 		self.winNumbersTDict = {}         # dictionary of targets
@@ -62,11 +65,13 @@ class model():
 		Returns:
 			2-D numpy arrays for continuous/sequence features and targets respectively
 		"""
-		batchDrawIds = random.sample(self.trainDrawIds, self.batchsize)
-		contFeatures = np.array([self.contFDict[x] for x in batchDrawIds])
-		seqFeatures = np.array([self.seqFDict[x] for x in batchDrawIds])
-		targets = np.array([self.winNumbersTDict[x] for x in batchDrawIds])
-		return contFeatures, seqFeatures, targets
+		for i in range(self.batchesNo):
+			batchDrawIds = random.sample(self.trainDrawIds, self.batchsize)
+			contFeatures = np.array([self.contFDict[x] for x in batchDrawIds])
+			seqFeatures = np.array([self.seqFDict[x] for x in batchDrawIds])
+			targets = np.array([self.winNumbersTDict[x] for x in batchDrawIds])
+			self.queue.put((contFeatures, seqFeatures, targets))
+		#return contFeatures, seqFeatures, targets
 
 	def getPastWinningNumbers(self, datavalues, drawId): 
 		"""Processes arguments and performs validity checks
@@ -189,6 +194,11 @@ class model():
 			#processResults(targets, predictions)
 		return predictions
 
+	def initThread(self):
+		t = Thread(target=self.batchPrep)
+		t.daemon = True
+		t.start()
+
 	def trainModel(self):
 		"""
 		Initializes a TF session, performs training and predicts on eval/test data
@@ -197,16 +207,25 @@ class model():
 		"""
 		with tf.Session() as sess:
 			sess.run(tf.global_variables_initializer())
+			self.initThread()
 			self.saver = tf.train.Saver()
 			print("Training:")
 			for i in range(self.batchesNo):
-				contFeatures, seqFeatures, targets = self.batchPrep()
+				#contFeatures, seqFeatures, targets = self.batchPrep()
+				batchTuple = self.queue.get()
+				contFeatures, seqFeatures, targets = batchTuple[0], batchTuple[1], batchTuple[2]
 				fd = {self.featuresInput: contFeatures, self.targetsOutput: targets}
 				_, l, out, xx1, fi = sess.run(fetches=[self.train, self.loss, self.output, self.x1, self.featuresInput], feed_dict=fd)
 				if i%(self.batchesNo/10)==0:
 					print("\tBatch ",i,": Train loss: ", l)
-				if i>0 and i%100==0:
+				if i>0 and i%(int(self.batchesNo/3))==0:
+					print("Evaluating:")
 					self.runInference(runType='eval', sess=sess)
+				self.queue.task_done()
 			print("Testing:")
 			self.runInference(runType='test', sess=sess)
+			try:
+				self.queue.join()                    # Join all Threads
+			except KeyboardInterrupt:
+				sys.exit(1) 
 		return 0
