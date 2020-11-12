@@ -40,7 +40,7 @@ def argParser(argv):
                         action='store_true', default=True,
                         help='Overwrite existing model after training')
 
-    parser.add_argument('-o', '--output', dest='output',
+    parser.add_argument('-o', '--outputpath', dest='outputpath',
                         action='store_true', default=os.path.join('..', 'output'),
                         help='Path to model output/predictions output')
 
@@ -53,9 +53,9 @@ def argChecker(args):
     Returns:
         Success Code
     """
-    if not os.path.exists(args.output):
+    if not os.path.exists(args.outputpath):
         print('\tOutput directory not found, creating...')
-        os.mkdir(args.output)
+        os.mkdir(args.outputpath)
     if not os.path.exists(args.modelpath):
         print('\tModel directory not found, creating...')
         os.mkdir(args.modelpath)

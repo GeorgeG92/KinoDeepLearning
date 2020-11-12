@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 import random
+import os
 from tensorflow.python.util import deprecation
 deprecation._PRINT_DEPRECATION_WARNINGS = False
 import tensorflow as tf
@@ -14,14 +15,18 @@ class model():
 		self.batchsize = int(args.batchsize)
 		self.batchesNo = 100
 		self.lookback = args.lookback
-		self.modelpath = args.modelpath
+		self.modelpath = args.modelpath+'/'
 		self.overwrite = args.overwrite
-		self.output = args.output
+		self.outputpath = args.outputpath
 		self.winNos = 20
 		self.queue = Queue(maxsize=5)
 		self.contFDict = {}               # dictionary of continuous features
 		self.seqFDict = {}                # dictionary of seq features (past winning numbers)
 		self.winNumbersTDict = {}         # dictionary of targets
+
+		self.config = tf.compat.v1.ConfigProto(gpu_options=tf.compat.v1.GPUOptions(allow_growth=True), log_device_placement=False,
+			allow_soft_placement = True)
+		self.sess = tf.compat.v1.Session(config=self.config)
 
 		self.prepareData(dataDf)
 		if self.train:
@@ -42,6 +47,21 @@ class model():
 			MAE metric
 		"""
 		return tf.reduce_mean(tf.math.abs(targets - predictions))
+
+	def saveModel(self, step):
+		""" Saves trained model to disk
+		"""
+		#self.saver.save(sess, self.modelpath)
+		#tf.saved_model.save(tf.trainable_variables(), self.modelpath)
+		saved_path = self.saver.save(self.sess, 
+			save_path=self.modelpath,
+			global_step=step)
+
+
+	def loadModel(self):
+		""" Loads model graph metadata and weights from disk
+		"""
+		self.saver.restore(self._session, self.modelpath)
 
 	def fcLayer(self, x, w, b, activation=None):
 		""" Implementation of a fully connected/dense TF layer
@@ -67,9 +87,9 @@ class model():
 		"""
 		for i in range(self.batchesNo):
 			batchDrawIds = random.sample(self.trainDrawIds, self.batchsize)
-			contFeatures = np.array([self.contFDict[x] for x in batchDrawIds])
-			seqFeatures = np.array([self.seqFDict[x] for x in batchDrawIds])
-			targets = np.array([self.winNumbersTDict[x] for x in batchDrawIds])
+			contFeatures = np.array([self.contFDict[x] for x in batchDrawIds], dtype=object)
+			seqFeatures = np.array([self.seqFDict[x] for x in batchDrawIds], dtype=object)
+			targets = np.array([self.winNumbersTDict[x] for x in batchDrawIds], dtype=object)
 			self.queue.put((contFeatures, seqFeatures, targets))
 		#return contFeatures, seqFeatures, targets
 
@@ -108,12 +128,6 @@ class model():
 		self.trainDrawIds = set(trainDf['id'])
 		self.evalDrawIds = set(evalDf['id'])
 		self.testDrawIds = set(testDf['id'])
-
-		# TF config and saver
-		self.config = tf.ConfigProto()
-		self.config.gpu_options.allow_growth = True
-		self.config.log_device_placement = False
-		self.config.allow_soft_placement = True
 		return 0
 
 
@@ -123,17 +137,17 @@ class model():
 			Success Code 
 		"""
 		self.biases = {
-			'b1': tf.get_variable('b1', shape=(256,), initializer = tf.random_normal_initializer(0, 0.05)),
-			'b2': tf.get_variable('b2', shape=(128,), initializer = tf.random_normal_initializer(0, 0.05)),
-			'b3': tf.get_variable('b3', shape=(64,), initializer = tf.random_normal_initializer(0, 0.05)),
-			'b4': tf.get_variable('b4', shape=(self.targetSize,), initializer = tf.random_normal_initializer(0, 0.05))
+			'b1': tf.compat.v1.get_variable('b1', shape=(256,), initializer = tf.random_normal_initializer(0, 0.05)),
+			'b2': tf.compat.v1.get_variable('b2', shape=(128,), initializer = tf.random_normal_initializer(0, 0.05)),
+			'b3': tf.compat.v1.get_variable('b3', shape=(64,), initializer = tf.random_normal_initializer(0, 0.05)),
+			'b4': tf.compat.v1.get_variable('b4', shape=(self.targetSize,), initializer = tf.random_normal_initializer(0, 0.05))
 		}
 
 		self.weights = {
-			'w1': tf.get_variable('w1', shape=(self.inputSize, 256), initializer = tf.random_normal_initializer(0, 0.05)),
-			'w2': tf.get_variable('w2', shape=(256, 128), initializer = tf.random_normal_initializer(0, 0.05)),
-			'w3': tf.get_variable('w3', shape=(128, 64), initializer = tf.random_normal_initializer(0, 0.05)),
-			'w4': tf.get_variable('w4', shape=(64, self.targetSize), initializer = tf.random_normal_initializer(0, 0.05))
+			'w1': tf.compat.v1.get_variable('w1', shape=(self.inputSize, 256), initializer = tf.random_normal_initializer(0, 0.05)),
+			'w2': tf.compat.v1.get_variable('w2', shape=(256, 128), initializer = tf.random_normal_initializer(0, 0.05)),
+			'w3': tf.compat.v1.get_variable('w3', shape=(128, 64), initializer = tf.random_normal_initializer(0, 0.05)),
+			'w4': tf.compat.v1.get_variable('w4', shape=(64, self.targetSize), initializer = tf.random_normal_initializer(0, 0.05))
 		}
 		return 0
 
@@ -144,11 +158,11 @@ class model():
 		"""
 
 		# Graph operations
-		self.featuresInput = tf.placeholder(name="featuresInput", dtype=tf.float32, shape=(None, self.inputSize))
+		self.featuresInput = tf.compat.v1.placeholder(name="featuresInput", dtype=tf.float32, shape=(None, self.inputSize))
 		#seqInput = ...
-		self.targetsOutput = tf.placeholder(name="targetsOutput", dtype=tf.float32, shape=(None, self.targetSize))
+		self.targetsOutput = tf.compat.v1.placeholder(name="targetsOutput", dtype=tf.float32, shape=(None, self.targetSize))
 
-		with tf.variable_scope("contFeatures"):
+		with tf.compat.v1.variable_scope("contFeatures"):
 			self.x1 = self.fcLayer(self.featuresInput, self.weights['w1'], self.biases['b1'], 'relu')
 			self.x2 = self.fcLayer(self.x1, self.weights['w2'], self.biases['b2'], 'relu')
 			self.x3 = self.fcLayer(self.x2, self.weights['w3'], self.biases['b3'], 'relu')
@@ -161,7 +175,7 @@ class model():
 		#with tf.variable_scope("jointFeatures"):
 
 		self.loss = self.absLoss(self.targetsOutput, self.output)
-		self.optim = tf.train.AdamOptimizer(0.002, 0.5)
+		self.optim = tf.compat.v1.train.AdamOptimizer(0.002, 0.5)
 		self.train = self.optim.minimize(self.loss)
 		return 0
 
@@ -173,13 +187,13 @@ class model():
 			sess: The TF session passed from the train function for inference
 		"""
 		if runType=='eval':
-			contFeatures = np.array([self.contFDict[x] for x in self.evalDrawIds])
-			seqFeatures = np.array([self.seqFDict[x] for x in self.evalDrawIds])
-			targets = np.array([self.winNumbersTDict[x] for x in self.evalDrawIds])
+			contFeatures = np.array([self.contFDict[x] for x in self.evalDrawIds], dtype=object)
+			seqFeatures = np.array([self.seqFDict[x] for x in self.evalDrawIds], dtype=object)
+			targets = np.array([self.winNumbersTDict[x] for x in self.evalDrawIds], dtype=object)
 		elif runType=='test':
-			contFeatures = np.array([self.contFDict[x] for x in self.testDrawIds])
-			seqFeatures = np.array([self.seqFDict[x] for x in self.testDrawIds])
-			targets = np.array([self.winNumbersTDict[x] for x in self.testDrawIds])
+			contFeatures = np.array([self.contFDict[x] for x in self.testDrawIds], dtype=object)
+			seqFeatures = np.array([self.seqFDict[x] for x in self.testDrawIds], dtype=object)
+			targets = np.array([self.winNumbersTDict[x] for x in self.testDrawIds], dtype=object)
 		else:
 			raise Exception('runInference() runType should be in "eval" or "test", '+str(runType)+" provided")
 		
@@ -205,27 +219,28 @@ class model():
 		Returns:
 			Success Code
 		"""
-		with tf.Session() as sess:
-			sess.run(tf.global_variables_initializer())
-			self.initThread()
-			self.saver = tf.train.Saver()
-			print("Training:")
-			for i in range(self.batchesNo):
-				#contFeatures, seqFeatures, targets = self.batchPrep()
-				batchTuple = self.queue.get()
-				contFeatures, seqFeatures, targets = batchTuple[0], batchTuple[1], batchTuple[2]
-				fd = {self.featuresInput: contFeatures, self.targetsOutput: targets}
-				_, l, out, xx1, fi = sess.run(fetches=[self.train, self.loss, self.output, self.x1, self.featuresInput], feed_dict=fd)
-				if i%(self.batchesNo/10)==0:
-					print("\tBatch ",i,": Train loss: ", l)
-				if i>0 and i%(int(self.batchesNo/3))==0:
-					print("Evaluating:")
-					self.runInference(runType='eval', sess=sess)
-				self.queue.task_done()
-			print("Testing:")
-			self.runInference(runType='test', sess=sess)
-			try:
-				self.queue.join()                    # Join all Threads
-			except KeyboardInterrupt:
-				sys.exit(1) 
+		#with tf.Session() as sess:
+		self.sess.run(tf.compat.v1.global_variables_initializer())
+		self.initThread()
+		self.saver = tf.compat.v1.train.Saver(tf.compat.v1.trainable_variables(), save_relative_paths=True)
+		print("Training:")
+		for i in range(self.batchesNo):
+			batchTuple = self.queue.get()
+			contFeatures, seqFeatures, targets = batchTuple[0], batchTuple[1], batchTuple[2]
+			fd = {self.featuresInput: contFeatures, self.targetsOutput: targets}
+			_, l, out= self.sess.run(fetches=[self.train, self.loss, self.output], feed_dict=fd)
+			if i%(self.batchesNo/10)==0:
+				print("\tBatch ",i,": Train loss: ", l)
+			if i>0 and i%(int(self.batchesNo/3))==0:
+				print("Evaluating:")
+				self.runInference(runType='eval', sess=self.sess)
+			self.queue.task_done()
+		print("Testing:")
+		self.runInference(runType='test', sess=self.sess)
+		try:
+			self.queue.join()                    # Join all Threads
+		except KeyboardInterrupt:
+			sys.exit(1) 
+		assert os.path.exists(self.outputpath)
+		self.saveModel(self.batchesNo)
 		return 0
