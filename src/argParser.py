@@ -21,7 +21,7 @@ def argParser(argv):
                         help='Whether to train the model or use as is')
 
     parser.add_argument('-b', '--batchsize', dest='batchsize',
-                        default='64',
+                        default='200',
                         help='Define training batchsize')
 
     parser.add_argument('-m', '--modelpath', dest='modelpath',

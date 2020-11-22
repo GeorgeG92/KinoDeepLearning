@@ -1,6 +1,7 @@
 from argParser import argParser
 from preprocess import dataLoader 
-from model import model
+from multiheadedModel import model
+#from regressionModel import model
 import sys
 
 
